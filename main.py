@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 def _input_text_message(text: str):
     return [{"role": "user", "content": [{"type": "input_text", "text": text}]}]
 
+
 def _vision_input_message(text: str, image_url: str | None):
     if not image_url:
         return _input_text_message(text)
@@ -177,6 +178,7 @@ class AskResponse(BaseModel):
     generated_image: str | None = None
     generated_image_caption: str | None = None
 
+
 @app.post("/ask", response_model=AskResponse)
 async def ask(
     query: str = Form(...),
@@ -186,9 +188,7 @@ async def ask(
     image_base64: str | None = Form(None),
 ):
     try:
-        effective_query = await _rewrite_followup_query(
-            query=query, transcript=transcript, chat_history=chat_history
-        )
+        effective_query = await _rewrite_followup_query(query=query, transcript=transcript, chat_history=chat_history)
 
         # 1. Process Image
         if image is not None:
@@ -319,9 +319,7 @@ async def ask_with_stream(
     image_base64: str | None = Form(None),
 ):
     try:
-        effective_query = await _rewrite_followup_query(
-            query=query, transcript=transcript, chat_history=chat_history
-        )
+        effective_query = await _rewrite_followup_query(query=query, transcript=transcript, chat_history=chat_history)
 
         if image is not None:
             image_bytes = await image.read()
@@ -382,10 +380,7 @@ Recent Chat History (JSON string):
         return StreamingResponse(error_event_generator(), media_type="application/x-ndjson")
 
     async def event_generator():
-        yield (
-            json.dumps({"type": "metadata", "quality": quality_data, "relevance": relevance_data})
-            + "\n"
-        )
+        yield (json.dumps({"type": "metadata", "quality": quality_data, "relevance": relevance_data}) + "\n")
 
         if should_block:
             suggestions = relevance_data.get("suggested_questions") or []
@@ -411,9 +406,7 @@ Recent Chat History (JSON string):
 
         try:
             full_text = ""
-            stream_result = Runner.run_streamed(
-                vision_tutor_agent, _vision_input_message(context, image_url)
-            )
+            stream_result = Runner.run_streamed(vision_tutor_agent, _vision_input_message(context, image_url))
             async for event in stream_result.stream_events():
                 if getattr(event, "type", None) != "raw_response_event":
                     continue
