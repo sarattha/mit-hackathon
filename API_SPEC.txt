@@ -27,6 +27,7 @@ POST /ask
 ------------------------------------------------------------------------------
 Purpose
 - Analyze emotion from a captured image, evaluate question quality, and return a tutor response (single JSON response).
+- Includes a lesson-scope guardrail based on the provided transcript.
 
 Content-Type
 - multipart/form-data
@@ -62,6 +63,19 @@ Response
   - response (string): tutor reply text
   - emotion (object): emotion classifier output (shape depends on agent; typically includes "emotion" and "confidence")
   - quality (object): question quality output (shape depends on agent; typically includes "label", "score", "feedback")
+  - relevance (object): lesson relevance output (see below)
+
+Lesson Relevance Guardrail
+- If `transcript` is non-empty, backend runs a relevance check:
+  - relevance.in_scope (boolean)
+  - relevance.confidence (0.0 to 1.0)
+  - relevance.reason (string)
+  - relevance.suggested_questions (string[])
+- If relevance.in_scope is false AND confidence >= 0.6:
+  - Backend returns a redirect-style response (still HTTP 200) asking the student to ask an in-scope question and may include suggested rewrites.
+- If `transcript` is empty:
+  - Backend skips the relevance check and returns relevance with:
+    - in_scope=true, confidence=0.0, reason="No transcript provided; skipping lesson scope check."
 
 Error Behavior
 - Returns 200 with:
@@ -128,7 +142,7 @@ Response
 - 200 application/x-ndjson
 - Each line is a JSON object (NDJSON). Event types:
   - metadata (sent first)
-    - {"type":"metadata","emotion":{...},"quality":{...}}
+    - {"type":"metadata","emotion":{...},"quality":{...},"relevance":{...}}
   - token (0..N times)
     - {"type":"token","content":"partial text"}
   - done (sent once at end)

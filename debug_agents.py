@@ -1,6 +1,7 @@
-from agents import Agent, Runner
 import asyncio
-import os
+
+from agents import Agent, Runner
+
 
 async def main():
     # Try GPT-5
@@ -20,6 +21,7 @@ async def main():
         print("Success Default:", result.final_output)
     except Exception as e:
         print("Error Default:", e)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

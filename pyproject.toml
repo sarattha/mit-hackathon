@@ -11,3 +11,26 @@ dependencies = [
     "python-multipart>=0.0.21",
     "uvicorn>=0.38.0",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "ruff>=0.14.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "FAST", #fastapi
+]
+isort = { combine-as-imports = true}
