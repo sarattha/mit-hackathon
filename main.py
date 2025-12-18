@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import json
 import logging
 import re
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from my_agents import (
     followup_rephrase_agent,
     image_decider_agent,
-    image_generator_agent,
+    generate_image_base64,
     quality_agent,
     relevance_agent,
     vision_tutor_agent,
@@ -92,13 +93,16 @@ def _extract_image_data_url_from_run_result(run_result: Any) -> str | None:
     for item in new_items:
         if getattr(item, "type", None) != "tool_call_item":
             continue
+
         raw_call = getattr(item, "raw_item", None)
         call_type = _get_field(raw_call, "type")
         if call_type != "image_generation_call":
             continue
+
         img_result = _get_field(raw_call, "result")
         if isinstance(img_result, str) and img_result:
             return f"data:image/png;base64,{img_result}"
+
     return None
 
 
@@ -172,7 +176,6 @@ class AskResponse(BaseModel):
     relevance: dict
     generated_image: str | None = None
     generated_image_caption: str | None = None
-
 
 @app.post("/ask", response_model=AskResponse)
 async def ask(
@@ -275,14 +278,15 @@ Tutor response:
 """.strip()
             decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
             decision = json.loads(decision_result.final_output)
+            print("decision: ", decision)
             should_generate = bool(decision.get("should_generate", False))
             confidence = float(decision.get("confidence", 0.0) or 0.0)
             prompt = (decision.get("prompt") or "").strip()
             caption = (decision.get("caption") or "").strip()
 
             if should_generate and confidence >= 0.6 and prompt:
-                image_result = await Runner.run(image_generator_agent, prompt)
-                generated_image = _extract_image_data_url_from_run_result(image_result)
+                image_b64 = await asyncio.to_thread(generate_image_base64, prompt=prompt)
+                generated_image = f"data:image/png;base64,{image_b64}"
                 generated_image_caption = caption or None
         except Exception:
             pass
@@ -436,14 +440,15 @@ Tutor response:
 """.strip()
                 decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
                 decision = json.loads(decision_result.final_output)
+                print("decision: ", decision)
                 should_generate = bool(decision.get("should_generate", False))
                 confidence = float(decision.get("confidence", 0.0) or 0.0)
                 prompt = (decision.get("prompt") or "").strip()
                 caption = (decision.get("caption") or "").strip()
 
                 if should_generate and confidence >= 0.6 and prompt:
-                    image_result = await Runner.run(image_generator_agent, prompt)
-                    generated_image = _extract_image_data_url_from_run_result(image_result)
+                    image_b64 = await asyncio.to_thread(generate_image_base64, prompt=prompt)
+                    generated_image = f"data:image/png;base64,{image_b64}"
                     generated_image_caption = caption or None
             except Exception:
                 pass

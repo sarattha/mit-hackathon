@@ -1,4 +1,5 @@
-from agents import Agent, ImageGenerationTool
+from agents import Agent
+from openai import OpenAI
 
 # Follow-up Rephrase Agent
 followup_rephrase_agent = Agent(
@@ -48,17 +49,19 @@ Output JSON ONLY:
 )
 
 
-# Image Generator Agent (uses ImageGenerationTool)
-image_generator_agent = Agent(
-    name="ImageGenerator",
-    model="gpt-5.1",
-    instructions="You are a helpful agent.",
-    tools=[
-        ImageGenerationTool(
-            tool_config={"type": "image_generation", "quality": "low"},
-        )
-    ],
-)
+def generate_image_base64(
+    *,
+    prompt: str,
+    model: str = "gpt-image-1.5",
+) -> str:
+    client = OpenAI()
+    result = client.images.generate(model=model, prompt=prompt)
+    return result.data[0].b64_json
+
+
+# Backward-compatible name: this is intentionally NOT an Agent anymore,
+# because routing base64 tool output through an LLM can hit token limits.
+image_generator_agent = generate_image_base64
 
 # Question Quality Gamification Agent
 quality_agent = Agent(
