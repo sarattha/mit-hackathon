@@ -1,6 +1,8 @@
 import base64
 import json
 import logging
+import re
+from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile
@@ -9,13 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agents import Runner
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles # Optional if we had assets, but single file is easier with HTMLResponse
-from pydantic import BaseModel
-
-from agents import Runner
+from fastapi.responses import HTMLResponse
 from my_agents import emotion_agent, quality_agent, tutor_agent
 
 load_dotenv()
@@ -36,6 +32,32 @@ logger = logging.getLogger(__name__)
 def _input_text_message(text: str):
     return [{"role": "user", "content": [{"type": "input_text", "text": text}]}]
 
+_DATA_URL_RE = re.compile(r"^data:(?P<mime>[^;]+);base64,(?P<b64>.*)$", re.DOTALL)
+
+
+def _image_url_from_upload_or_base64(
+    *,
+    image_base64: Optional[str],
+) -> str:
+    if image_base64:
+        match = _DATA_URL_RE.match(image_base64.strip())
+        if match:
+            mime = match.group("mime") or "image/jpeg"
+            b64 = match.group("b64")
+        else:
+            mime = "image/jpeg"
+            b64 = image_base64.strip()
+
+        try:
+            base64.b64decode(b64, validate=False)
+        except Exception as e:
+            raise ValueError("Invalid base64 image data") from e
+
+        return f"data:{mime};base64,{b64}"
+
+    raise ValueError("Missing image: provide 'image_base64' or an 'image' upload")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("index.html", "r") as f:
@@ -52,16 +74,21 @@ async def ask(
     query: str = Form(...),
     transcript: str = Form(""),
     chat_history: str = Form("[]"),  # JSON string
-    image: UploadFile = File(...)
+    image: Optional[UploadFile] = File(None),
+    image_base64: Optional[str] = Form(None),
 ):
     try:
         # 1. Process Image
-        image_bytes = await image.read()
-        base64_image = base64.b64encode(image_bytes).decode("utf-8")
-        content_type = image.content_type or "image/jpeg"
-        if not content_type.startswith("image/"):
-            content_type = "image/jpeg"
-        image_url = f"data:{content_type};base64,{base64_image}"
+        if image is not None:
+            # Ensure we use the async read API to avoid sync I/O in the event loop.
+            image_bytes = await image.read()
+            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            content_type = image.content_type or "image/jpeg"
+            if not content_type.startswith("image/"):
+                content_type = "image/jpeg"
+            image_url = f"data:{content_type};base64,{base64_image}"
+        else:
+            image_url = _image_url_from_upload_or_base64(image_base64=image_base64)
 
         # 2. Emotion Classification
         emotion_input = [
@@ -114,15 +141,19 @@ async def ask_with_stream(
     query: str = Form(...),
     transcript: str = Form(""),
     chat_history: str = Form("[]"),
-    image: UploadFile = File(...)
+    image: Optional[UploadFile] = File(None),
+    image_base64: Optional[str] = Form(None),
 ):
     try:
-        image_bytes = await image.read()
-        base64_image = base64.b64encode(image_bytes).decode("utf-8")
-        content_type = image.content_type or "image/jpeg"
-        if not content_type.startswith("image/"):
-            content_type = "image/jpeg"
-        image_url = f"data:{content_type};base64,{base64_image}"
+        if image is not None:
+            image_bytes = await image.read()
+            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            content_type = image.content_type or "image/jpeg"
+            if not content_type.startswith("image/"):
+                content_type = "image/jpeg"
+            image_url = f"data:{content_type};base64,{base64_image}"
+        else:
+            image_url = _image_url_from_upload_or_base64(image_base64=image_base64)
 
         emotion_input = [
             {

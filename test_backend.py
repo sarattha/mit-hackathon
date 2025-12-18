@@ -11,18 +11,17 @@ with open("test_image.jpg", "wb") as f:
 
 url = "http://localhost:8000/ask"
 
-files = {
-    'image': ('test_image.jpg', open('test_image.jpg', 'rb'), 'image/jpeg')
-}
 data = {
     'query': 'Why is the sky blue?',
     'transcript': 'Talking about atmosphere.',
-    'chat_history': '[]'
+    'chat_history': '[]',
+    # Send as base64 data URL (preferred)
+    'image_base64': f'data:image/jpeg;base64,{pixel_base64}',
 }
 
 print("Sending request to /ask...")
 try:
-    response = requests.post(url, data=data, files=files)
+    response = requests.post(url, data=data)
     print("Status Code:", response.status_code)
     try:
         json_resp = response.json()

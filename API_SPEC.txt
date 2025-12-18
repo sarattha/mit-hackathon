@@ -1,0 +1,148 @@
+Education AI Prototype API Spec
+Version: 2025-12-18
+
+Base URL
+- Local dev: http://localhost:8000
+
+Auth
+- None
+
+CORS
+- Allowed origins: *
+
+------------------------------------------------------------------------------
+GET /
+------------------------------------------------------------------------------
+Purpose
+- Serves the demo UI (index.html).
+
+Request
+- No parameters.
+
+Response
+- 200 text/html
+
+------------------------------------------------------------------------------
+POST /ask
+------------------------------------------------------------------------------
+Purpose
+- Analyze emotion from a captured image, evaluate question quality, and return a tutor response (single JSON response).
+
+Content-Type
+- multipart/form-data
+
+Form Fields
+- query (string, required)
+  - The student's question.
+- transcript (string, optional, default: "")
+  - Lecture/video transcript or any supporting context.
+- chat_history (string, optional, default: "[]")
+  - JSON-encoded string of prior messages.
+  - Recommended schema (simple, OpenAI-style):
+    - Array of messages:
+      - [{"role":"user"|"assistant","content":"..."}]
+  - Notes:
+    - Backend currently does not validate/parse this; it is included in the tutor context as text.
+    - Use `JSON.stringify(historyArray)` when sending from the frontend.
+- image_base64 (string, optional)
+  - Preferred for frontend integration.
+  - Accepts either:
+    - Data URL: "data:image/jpeg;base64,AAAA..."
+    - Raw base64: "AAAA..." (assumed image/jpeg)
+- image (file, optional)
+  - Backward compatible file upload (e.g., capture.jpg).
+
+Image Requirement
+- You must provide exactly one of:
+  - image_base64
+  - image
+
+Response
+- 200 application/json
+  - response (string): tutor reply text
+  - emotion (object): emotion classifier output (shape depends on agent; typically includes "emotion" and "confidence")
+  - quality (object): question quality output (shape depends on agent; typically includes "label", "score", "feedback")
+
+Error Behavior
+- Returns 200 with:
+  - response: fallback error message
+  - emotion: {"error": "..."}
+  - quality: {"error": "..."}
+
+Example (base64)
+curl -X POST "http://localhost:8000/ask" \
+  -F 'query=Why is the sky blue?' \
+  -F 'transcript=Teacher: Today we are talking about light scattering.' \
+  -F 'chat_history=[{"role":"user","content":"Hi, can you help me?"},{"role":"assistant","content":"Sure—what topic are you studying?"},{"role":"user","content":"Light and scattering."}]' \
+  -F 'image_base64=data:image/jpeg;base64,/9j/4AAQSk...'
+
+Example (base64 + chat history JSON-escaped)
+- Use this if your shell has trouble with quotes/brackets in `-F`.
+curl -X POST "http://localhost:8000/ask" \
+  -F 'query=Why is the sky blue?' \
+  -F 'transcript=Teacher: Today we are talking about light scattering.' \
+  -F 'chat_history=[{\"role\":\"user\",\"content\":\"Hi, can you help me?\"},{\"role\":\"assistant\",\"content\":\"Sure—what topic are you studying?\"},{\"role\":\"user\",\"content\":\"Light and scattering.\"}]' \
+  -F 'image_base64=data:image/jpeg;base64,/9j/4AAQSk...'
+
+Example (file upload)
+curl -X POST "http://localhost:8000/ask" \
+  -F 'query=Why is the sky blue?' \
+  -F 'transcript=Teacher: Today we are talking about light scattering.' \
+  -F 'chat_history=[{"role":"user","content":"Earlier you said scattering depends on wavelength—can you remind me why?"},{"role":"assistant","content":"Because shorter wavelengths scatter more strongly in the atmosphere."}]' \
+  -F 'image=@capture.jpg;type=image/jpeg'
+
+Example (frontend JS)
+// Recommended chat history shape:
+const chatHistory = [
+  { role: "user", content: "Earlier you said scattering depends on wavelength—can you remind me why?" },
+  { role: "assistant", content: "Because shorter wavelengths scatter more strongly in the atmosphere." },
+  { role: "user", content: "So does that mean blue scatters more than red?" }
+];
+
+const formData = new FormData();
+formData.append("query", "Why is the sky blue?");
+formData.append("transcript", "Teacher: Today we are talking about light scattering.");
+formData.append("chat_history", JSON.stringify(chatHistory));
+formData.append("image_base64", dataUrl); // "data:image/jpeg;base64,..."
+
+const res = await fetch("http://localhost:8000/ask", { method: "POST", body: formData });
+const json = await res.json();
+
+------------------------------------------------------------------------------
+POST /ask_with_stream
+------------------------------------------------------------------------------
+Purpose
+- Same analysis as /ask, but streams the tutor response tokens as NDJSON.
+
+Content-Type
+- multipart/form-data
+
+Form Fields
+- Same as /ask:
+  - query (required)
+  - transcript (optional)
+  - chat_history (optional)
+  - image_base64 (optional) OR image (optional)
+
+Response
+- 200 application/x-ndjson
+- Each line is a JSON object (NDJSON). Event types:
+  - metadata (sent first)
+    - {"type":"metadata","emotion":{...},"quality":{...}}
+  - token (0..N times)
+    - {"type":"token","content":"partial text"}
+  - done (sent once at end)
+    - {"type":"done"}
+  - error (may be sent instead of/after other events)
+    - {"type":"error","content":"error message"}
+
+Frontend Notes (stream parsing)
+- Read the response body as a stream, split by newline, parse each line as JSON.
+- Append token.content to the UI as it arrives.
+
+Example (base64 + streaming)
+curl -N -X POST "http://localhost:8000/ask_with_stream" \
+  -F 'query=Why is the sky blue?' \
+  -F 'transcript=Teacher: Today we are talking about light scattering.' \
+  -F 'chat_history=[{"role":"user","content":"I’m confused about scattering."},{"role":"assistant","content":"Tell me what part is confusing."},{"role":"user","content":"Why does the sky look blue instead of violet?"}]' \
+  -F 'image_base64=data:image/jpeg;base64,/9j/4AAQSk...'

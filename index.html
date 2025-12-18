@@ -89,15 +89,15 @@
             const transcript = document.getElementById('transcript').value;
             const history = document.getElementById('history').value;
             
-            // Get Image blob
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
-            if (!blob) { alert("Please capture an image first!"); return; }
+            // Get base64 data URL (e.g. "data:image/jpeg;base64,...")
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            if (!dataUrl || dataUrl === 'data:,') { alert("Please capture an image first!"); return; }
 
             const formData = new FormData();
             formData.append('query', query);
             formData.append('transcript', transcript);
             formData.append('chat_history', history);
-            formData.append('image', blob, 'capture.jpg');
+            formData.append('image_base64', dataUrl);
 
             document.getElementById('loading').classList.remove('hidden');
             document.getElementById('resEmotion').textContent = '...';
