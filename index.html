@@ -49,6 +49,10 @@
         <!-- Controls -->
         <div class="section">
             <h3>3. Action</h3>
+            <label style="display: inline-flex; align-items: center; gap: 8px; margin-right: 12px;">
+                <input type="checkbox" id="generateImage" checked>
+                Generate explanatory image (optional)
+            </label>
             <button id="btnAsk">Ask (Standard)</button>
             <button id="btnStream">Ask (Stream)</button>
         </div>
@@ -94,6 +98,7 @@
             const query = document.getElementById('query').value;
             const transcript = document.getElementById('transcript').value;
             const history = document.getElementById('history').value;
+            const generateImage = document.getElementById('generateImage').checked;
             
             // Get base64 data URL (e.g. "data:image/jpeg;base64,...")
             const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
@@ -104,6 +109,7 @@
             formData.append('transcript', transcript);
             formData.append('chat_history', history);
             formData.append('image_base64', dataUrl);
+            formData.append('generate_image', generateImage ? 'true' : 'false');
 
             document.getElementById('loading').classList.remove('hidden');
             document.getElementById('resEmotion').textContent = '...';

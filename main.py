@@ -2,6 +2,7 @@ import base64
 import asyncio
 import json
 import logging
+import os
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -36,6 +37,8 @@ app.add_middleware(
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_VISION_TUTOR_MAX_GUIDANCE_TURNS = int(os.getenv("VISION_TUTOR_MAX_GUIDANCE_TURNS", "3"))
 
 
 def _input_text_message(text: str):
@@ -87,6 +90,72 @@ def _get_field(obj: Any, key: str) -> Any:
     if isinstance(obj, Mapping):
         return obj.get(key)
     return getattr(obj, key, None)
+
+
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(?P<body>\{.*?\}|\[.*?\])\s*```", re.DOTALL)
+
+
+def _safe_json_loads(value: Any, *, default: Any) -> Any:
+    if value is None:
+        return default
+
+    if isinstance(value, (dict, list)):
+        return value
+
+    text = str(value).strip()
+    if not text:
+        return default
+
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    fenced = _JSON_FENCE_RE.search(text)
+    if fenced:
+        body = (fenced.group("body") or "").strip()
+        if body:
+            try:
+                return json.loads(body)
+            except Exception:
+                pass
+
+    start_obj = text.find("{")
+    end_obj = text.rfind("}")
+    if 0 <= start_obj < end_obj:
+        candidate = text[start_obj : end_obj + 1].strip()
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+
+    start_arr = text.find("[")
+    end_arr = text.rfind("]")
+    if 0 <= start_arr < end_arr:
+        candidate = text[start_arr : end_arr + 1].strip()
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+
+    return default
+
+
+def _parse_chat_history(chat_history: str) -> list[Any]:
+    parsed = _safe_json_loads(chat_history, default=[])
+    if isinstance(parsed, list):
+        return parsed
+    return []
+
+
+def _count_assistant_turns(history: list[Any]) -> int:
+    count = 0
+    for item in history:
+        if isinstance(item, Mapping):
+            role = str(item.get("role") or item.get("sender") or "").strip().lower()
+            if role == "assistant" or role == "tutor":
+                count += 1
+    return count
 
 
 def _extract_image_data_url_from_run_result(run_result: Any) -> str | None:
@@ -186,9 +255,14 @@ async def ask(
     chat_history: str = Form("[]"),  # JSON string
     image: UploadFile | None = File(None),
     image_base64: str | None = Form(None),
+    generate_image: bool = Form(False),
 ):
     try:
         effective_query = await _rewrite_followup_query(query=query, transcript=transcript, chat_history=chat_history)
+        chat_history_obj = _parse_chat_history(chat_history)
+        assistant_turns_so_far = _count_assistant_turns(chat_history_obj)
+        should_answer_now = assistant_turns_so_far >= _VISION_TUTOR_MAX_GUIDANCE_TURNS
+        tutor_phase = "answer" if should_answer_now else "guide"
 
         # 1. Process Image
         if image is not None:
@@ -204,7 +278,10 @@ async def ask(
 
         # 2. Question Quality
         quality_result = await Runner.run(quality_agent, _input_text_message(effective_query))
-        quality_data = json.loads(quality_result.final_output)
+        quality_data = _safe_json_loads(
+            quality_result.final_output,
+            default={"score": 0, "label": "Unknown", "feedback": "Quality model did not return JSON."},
+        )
 
         # 3. Lesson Relevance Guardrail (skip if transcript is missing)
         if transcript.strip():
@@ -220,7 +297,15 @@ Recent Chat History (JSON string):
 """.strip()
 
             relevance_result = await Runner.run(relevance_agent, _input_text_message(relevance_prompt))
-            relevance_data = json.loads(relevance_result.final_output)
+            relevance_data = _safe_json_loads(
+                relevance_result.final_output,
+                default={
+                    "in_scope": True,
+                    "confidence": 0.0,
+                    "reason": "Relevance model did not return JSON; skipping lesson scope check.",
+                    "suggested_questions": [],
+                },
+            )
         else:
             relevance_data = {
                 "in_scope": True,
@@ -257,6 +342,12 @@ Recent Chat History (JSON string):
         Question Quality: {quality_data.get("label")} (Score: {quality_data.get("score")})
         Feature: {quality_data.get("feedback")}
         Lesson Relevance: {relevance_data}
+
+        Tutor Guidance Policy:
+        - max_guidance_turns: {_VISION_TUTOR_MAX_GUIDANCE_TURNS}
+        - assistant_turns_so_far: {assistant_turns_so_far}
+        - should_answer_now: {"yes" if should_answer_now else "no"}
+        - tutoring_phase: {tutor_phase}
         
         Chat History: {chat_history}
         """
@@ -265,8 +356,9 @@ Recent Chat History (JSON string):
 
         generated_image = None
         generated_image_caption = None
-        try:
-            decision_prompt = f"""
+        if generate_image:
+            try:
+                decision_prompt = f"""
 Interpreted student question:
 {effective_query}
 
@@ -275,21 +367,36 @@ Lesson transcript/context:
 
 Tutor response:
 {tutor_result.final_output}
-""".strip()
-            decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
-            decision = json.loads(decision_result.final_output)
-            print("decision: ", decision)
-            should_generate = bool(decision.get("should_generate", False))
-            confidence = float(decision.get("confidence", 0.0) or 0.0)
-            prompt = (decision.get("prompt") or "").strip()
-            caption = (decision.get("caption") or "").strip()
 
-            if should_generate and confidence >= 0.6 and prompt:
-                image_b64 = await asyncio.to_thread(generate_image_base64, prompt=prompt)
-                generated_image = f"data:image/png;base64,{image_b64}"
-                generated_image_caption = caption or None
-        except Exception:
-            pass
+Tutor phase:
+{tutor_phase}
+
+Student-provided photo available:
+{"yes" if image_url else "no"}
+
+If a photo is available and you set use_input_image=true:
+- Write the prompt as an image-edit instruction that assumes the photo will be used as the base.
+- Prefer overlays: labels, arrows, highlights, simple callouts.
+- Keep the underlying scene/objects recognizable; avoid changing the whole image style.
+""".strip()
+                decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
+                decision = json.loads(decision_result.final_output)
+                print("decision: ", decision)
+                should_generate = bool(decision.get("should_generate", False))
+                confidence = float(decision.get("confidence", 0.0) or 0.0)
+                use_input_image = bool(decision.get("use_input_image", False))
+                prompt = (decision.get("prompt") or "").strip()
+                caption = (decision.get("caption") or "").strip()
+
+                if should_generate and confidence >= 0.6 and prompt:
+                    input_image_data_url = image_url if (use_input_image and image_url) else None
+                    image_b64 = await asyncio.to_thread(
+                        generate_image_base64, prompt=prompt, input_image_data_url=input_image_data_url
+                    )
+                    generated_image = f"data:image/png;base64,{image_b64}"
+                    generated_image_caption = caption or None
+            except Exception:
+                pass
 
         return AskResponse(
             response=tutor_result.final_output,
@@ -317,9 +424,14 @@ async def ask_with_stream(
     chat_history: str = Form("[]"),
     image: UploadFile | None = File(None),
     image_base64: str | None = Form(None),
+    generate_image: bool = Form(False),
 ):
     try:
         effective_query = await _rewrite_followup_query(query=query, transcript=transcript, chat_history=chat_history)
+        chat_history_obj = _parse_chat_history(chat_history)
+        assistant_turns_so_far = _count_assistant_turns(chat_history_obj)
+        should_answer_now = assistant_turns_so_far >= _VISION_TUTOR_MAX_GUIDANCE_TURNS
+        tutor_phase = "answer" if should_answer_now else "guide"
 
         if image is not None:
             image_bytes = await image.read()
@@ -332,7 +444,10 @@ async def ask_with_stream(
             image_url = _image_url_from_upload_or_base64(image_base64=image_base64)
 
         quality_result = await Runner.run(quality_agent, _input_text_message(effective_query))
-        quality_data = json.loads(quality_result.final_output)
+        quality_data = _safe_json_loads(
+            quality_result.final_output,
+            default={"score": 0, "label": "Unknown", "feedback": "Quality model did not return JSON."},
+        )
 
         if transcript.strip():
             relevance_prompt = f"""
@@ -347,7 +462,15 @@ Recent Chat History (JSON string):
 """.strip()
 
             relevance_result = await Runner.run(relevance_agent, _input_text_message(relevance_prompt))
-            relevance_data = json.loads(relevance_result.final_output)
+            relevance_data = _safe_json_loads(
+                relevance_result.final_output,
+                default={
+                    "in_scope": True,
+                    "confidence": 0.0,
+                    "reason": "Relevance model did not return JSON; skipping lesson scope check.",
+                    "suggested_questions": [],
+                },
+            )
         else:
             relevance_data = {
                 "in_scope": True,
@@ -367,6 +490,12 @@ Recent Chat History (JSON string):
         Question Quality: {quality_data.get("label")} (Score: {quality_data.get("score")})
         Feature: {quality_data.get("feedback")}
         Lesson Relevance: {relevance_data}
+
+        Tutor Guidance Policy:
+        - max_guidance_turns: {_VISION_TUTOR_MAX_GUIDANCE_TURNS}
+        - assistant_turns_so_far: {assistant_turns_so_far}
+        - should_answer_now: {"yes" if should_answer_now else "no"}
+        - tutoring_phase: {tutor_phase}
 
         Chat History: {chat_history}
         """
@@ -420,8 +549,9 @@ Recent Chat History (JSON string):
 
             generated_image = None
             generated_image_caption = None
-            try:
-                decision_prompt = f"""
+            if generate_image:
+                try:
+                    decision_prompt = f"""
 Interpreted student question:
 {effective_query}
 
@@ -430,21 +560,36 @@ Lesson transcript/context:
 
 Tutor response:
 {full_text}
-""".strip()
-                decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
-                decision = json.loads(decision_result.final_output)
-                print("decision: ", decision)
-                should_generate = bool(decision.get("should_generate", False))
-                confidence = float(decision.get("confidence", 0.0) or 0.0)
-                prompt = (decision.get("prompt") or "").strip()
-                caption = (decision.get("caption") or "").strip()
 
-                if should_generate and confidence >= 0.6 and prompt:
-                    image_b64 = await asyncio.to_thread(generate_image_base64, prompt=prompt)
-                    generated_image = f"data:image/png;base64,{image_b64}"
-                    generated_image_caption = caption or None
-            except Exception:
-                pass
+Tutor phase:
+{tutor_phase}
+
+Student-provided photo available:
+{"yes" if image_url else "no"}
+
+If a photo is available and you set use_input_image=true:
+- Write the prompt as an image-edit instruction that assumes the photo will be used as the base.
+- Prefer overlays: labels, arrows, highlights, simple callouts.
+- Keep the underlying scene/objects recognizable; avoid changing the whole image style.
+""".strip()
+                    decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
+                    decision = json.loads(decision_result.final_output)
+                    print("decision: ", decision)
+                    should_generate = bool(decision.get("should_generate", False))
+                    confidence = float(decision.get("confidence", 0.0) or 0.0)
+                    use_input_image = bool(decision.get("use_input_image", False))
+                    prompt = (decision.get("prompt") or "").strip()
+                    caption = (decision.get("caption") or "").strip()
+
+                    if should_generate and confidence >= 0.6 and prompt:
+                        input_image_data_url = image_url if (use_input_image and image_url) else None
+                        image_b64 = await asyncio.to_thread(
+                            generate_image_base64, prompt=prompt, input_image_data_url=input_image_data_url
+                        )
+                        generated_image = f"data:image/png;base64,{image_b64}"
+                        generated_image_caption = caption or None
+                except Exception:
+                    pass
 
             if generated_image:
                 yield (
