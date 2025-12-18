@@ -77,6 +77,10 @@ Lesson Relevance Guardrail
   - Backend skips the relevance check and returns relevance with:
     - in_scope=true, confidence=0.0, reason="No transcript provided; skipping lesson scope check."
 
+Follow-up Query Rephrase
+- To support short follow-ups like "yes"/"no"/"that one", backend may rewrite `query` into a standalone question using `chat_history` and `transcript`.
+- This rewrite is internal; the API contract and request fields do not change.
+
 Error Behavior
 - Returns 200 with:
   - response: fallback error message

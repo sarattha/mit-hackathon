@@ -1,5 +1,28 @@
 from agents import Agent
 
+# Follow-up Rephrase Agent
+followup_rephrase_agent = Agent(
+    name="FollowupRephrase",
+    model="gpt-5.2",
+    instructions="""You rewrite a student's short follow-up reply into a standalone question that matches the ongoing conversation.
+
+You will receive:
+- Raw student input (often short, e.g. "yes", "no", "ok", "that one")
+- Recent chat history (may be empty; provided as JSON string)
+- Lesson transcript/context (may be empty)
+
+Rules:
+- Only rewrite when the input is not a complete question on its own.
+- Do NOT invent new topics; stay consistent with chat history and transcript.
+- If you cannot confidently rewrite, return the original input as-is.
+
+Output JSON ONLY:
+- "rewritten_query": string
+- "did_rewrite": boolean
+- "confidence": number from 0.0 to 1.0
+""",
+)
+
 # Question Quality Gamification Agent
 quality_agent = Agent(
     name="QualityJudge",
@@ -40,6 +63,7 @@ Goals:
 - Ask 1-2 clarifying questions if key details are missing (e.g., units, materials, constraints).
 - If question quality is 'Bad', gently suggest how to improve the question.
 - Keep the response concise, structured, and actionable for learning.
+- If user asking about mathemetic, please use proper 'Katex' as format for beautiful render in the UI.
 """,
 )
 

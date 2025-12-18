@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from my_agents import quality_agent, relevance_agent, vision_tutor_agent
+from my_agents import followup_rephrase_agent, quality_agent, relevance_agent, vision_tutor_agent
 
 load_dotenv()
 
@@ -72,6 +72,64 @@ def _image_url_from_upload_or_base64(
     return None
 
 
+def _should_rewrite_query(query: str) -> bool:
+    normalized = query.strip().lower()
+    if not normalized:
+        return False
+    if normalized in {
+        "yes",
+        "yeah",
+        "yep",
+        "sure",
+        "ok",
+        "okay",
+        "no",
+        "nope",
+        "maybe",
+        "this",
+        "that",
+        "this one",
+        "that one",
+        "i think so",
+        "not sure",
+        "idk",
+        "i don't know",
+        "same",
+    }:
+        return True
+    if len(normalized) < 12 and "?" not in normalized:
+        return True
+    return False
+
+
+async def _rewrite_followup_query(*, query: str, transcript: str, chat_history: str) -> str:
+    if not _should_rewrite_query(query):
+        return query
+
+    prompt = f"""
+Raw student input:
+{query}
+
+Lesson transcript/context:
+{transcript}
+
+Recent chat history (JSON string):
+{chat_history}
+""".strip()
+
+    try:
+        result = await Runner.run(followup_rephrase_agent, _input_text_message(prompt))
+        data = json.loads(result.final_output)
+        rewritten = (data.get("rewritten_query") or "").strip()
+        if rewritten:
+            return rewritten
+    except Exception:
+        # Fallback to original query on any rewrite error.
+        pass
+
+    return query
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("index.html") as f:
@@ -93,6 +151,10 @@ async def ask(
     image_base64: str | None = Form(None),
 ):
     try:
+        effective_query = await _rewrite_followup_query(
+            query=query, transcript=transcript, chat_history=chat_history
+        )
+
         # 1. Process Image
         if image is not None:
             # Ensure we use the async read API to avoid sync I/O in the event loop.
@@ -106,14 +168,14 @@ async def ask(
             image_url = _image_url_from_upload_or_base64(image_base64=image_base64)
 
         # 2. Question Quality
-        quality_result = await Runner.run(quality_agent, _input_text_message(query))
+        quality_result = await Runner.run(quality_agent, _input_text_message(effective_query))
         quality_data = json.loads(quality_result.final_output)
 
         # 3. Lesson Relevance Guardrail (skip if transcript is missing)
         if transcript.strip():
             relevance_prompt = f"""
 Student Question:
-{query}
+{effective_query}
 
 Lesson Transcript:
 {transcript}
@@ -154,7 +216,8 @@ Recent Chat History (JSON string):
 
         # 4. Tutor Response (grounded by the real-time image)
         context = f"""
-        Student Question: {query}
+        Student Raw Input: {query}
+        Interpreted Question: {effective_query}
         Video Transcript: {transcript}
         Question Quality: {quality_data.get("label")} (Score: {quality_data.get("score")})
         Feature: {quality_data.get("feedback")}
@@ -189,6 +252,10 @@ async def ask_with_stream(
     image_base64: str | None = Form(None),
 ):
     try:
+        effective_query = await _rewrite_followup_query(
+            query=query, transcript=transcript, chat_history=chat_history
+        )
+
         if image is not None:
             image_bytes = await image.read()
             base64_image = base64.b64encode(image_bytes).decode("utf-8")
@@ -199,13 +266,13 @@ async def ask_with_stream(
         else:
             image_url = _image_url_from_upload_or_base64(image_base64=image_base64)
 
-        quality_result = await Runner.run(quality_agent, _input_text_message(query))
+        quality_result = await Runner.run(quality_agent, _input_text_message(effective_query))
         quality_data = json.loads(quality_result.final_output)
 
         if transcript.strip():
             relevance_prompt = f"""
 Student Question:
-{query}
+{effective_query}
 
 Lesson Transcript:
 {transcript}
@@ -229,7 +296,8 @@ Recent Chat History (JSON string):
         should_block = (not in_scope) and confidence >= 0.6
 
         context = f"""
-        Student Question: {query}
+        Student Raw Input: {query}
+        Interpreted Question: {effective_query}
         Video Transcript: {transcript}
         Question Quality: {quality_data.get("label")} (Score: {quality_data.get("score")})
         Feature: {quality_data.get("feedback")}
