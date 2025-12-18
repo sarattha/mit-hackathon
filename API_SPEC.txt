@@ -26,7 +26,7 @@ Response
 POST /ask
 ------------------------------------------------------------------------------
 Purpose
-- Analyze emotion from a captured image, evaluate question quality, and return a tutor response (single JSON response).
+- Use a captured real-time image to answer the student's question (e.g., lab setup, pendulum), evaluate question quality, and return a tutor response (single JSON response).
 - Includes a lesson-scope guardrail based on the provided transcript.
 
 Content-Type
@@ -61,7 +61,6 @@ Image Requirement
 Response
 - 200 application/json
   - response (string): tutor reply text
-  - emotion (object): emotion classifier output (shape depends on agent; typically includes "emotion" and "confidence")
   - quality (object): question quality output (shape depends on agent; typically includes "label", "score", "feedback")
   - relevance (object): lesson relevance output (see below)
 
@@ -80,8 +79,8 @@ Lesson Relevance Guardrail
 Error Behavior
 - Returns 200 with:
   - response: fallback error message
-  - emotion: {"error": "..."}
   - quality: {"error": "..."}
+  - relevance: {"error": "..."}
 
 Example (base64)
 curl -X POST "http://localhost:8000/ask" \
@@ -142,7 +141,7 @@ Response
 - 200 application/x-ndjson
 - Each line is a JSON object (NDJSON). Event types:
   - metadata (sent first)
-    - {"type":"metadata","emotion":{...},"quality":{...},"relevance":{...}}
+    - {"type":"metadata","quality":{...},"relevance":{...}}
   - token (0..N times)
     - {"type":"token","content":"partial text"}
   - done (sent once at end)

@@ -58,7 +58,7 @@
             <h3>4. Results</h3>
             <div id="loading" class="hidden">Thinking...</div>
             
-            <h4>Emotion Analysis</h4>
+            <h4>Lesson Relevance</h4>
             <pre id="resEmotion">...</pre>
             
             <h4>Question Quality</h4>
@@ -127,7 +127,7 @@
                            try {
                                const data = JSON.parse(line);
                                if (data.type === 'metadata') {
-                                   document.getElementById('resEmotion').textContent = JSON.stringify(data.emotion, null, 2);
+                                   document.getElementById('resEmotion').textContent = JSON.stringify(data.relevance, null, 2);
                                    document.getElementById('resQuality').textContent = JSON.stringify(data.quality, null, 2);
                                } else if (data.type === 'token') {
                                    document.getElementById('resTutor').textContent += data.content;
@@ -142,7 +142,7 @@
 
                 } else {
                     const data = await response.json();
-                    document.getElementById('resEmotion').textContent = JSON.stringify(data.emotion, null, 2);
+                    document.getElementById('resEmotion').textContent = JSON.stringify(data.relevance, null, 2);
                     document.getElementById('resQuality').textContent = JSON.stringify(data.quality, null, 2);
                     document.getElementById('resTutor').textContent = data.response;
                 }

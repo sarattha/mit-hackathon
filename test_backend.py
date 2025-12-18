@@ -26,8 +26,8 @@ try:
     try:
         json_resp = response.json()
         print("Response Keys:", json_resp.keys())
-        print("Emotion Data:", json_resp.get("emotion"))
         print("Quality Data:", json_resp.get("quality"))
+        print("Relevance Data:", json_resp.get("relevance"))
         print("Tutor Response:", json_resp.get("response")[:50] + "...")
     except Exception:
         print("Failed to parse JSON:", response.text)

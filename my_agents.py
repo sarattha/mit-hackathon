@@ -1,15 +1,5 @@
 from agents import Agent
 
-# Emotion Classification Agent
-emotion_agent = Agent(
-    name="EmotionClassifier",
-    model="gpt-5.2",
-    instructions="""You are an expert at identifying facial emotions from images. 
-    You classify the emotion into one of these categories: 'Curious', 'Confused', 'Angry', 'Happy', 'Neutral', 'Bored'. 
-    You should also provide a confidence score from 0.0 to 1.0. 
-    Output the result as a JSON object with 'emotion' and 'confidence' keys.""",
-)
-
 # Question Quality Gamification Agent
 quality_agent = Agent(
     name="QualityJudge",
@@ -29,30 +19,28 @@ quality_agent = Agent(
     """,
 )
 
-# Tutor Agent
-# This agent will orchestrate the final response or just generate the answer based on context.
-# In this architecture, it receives the context from the other agents.
-tutor_agent = Agent(
-    name="Tutor",
+# Vision Tutor Agent
+# Uses the provided real-time image to ground explanations in real-world setups (e.g. lab demos).
+vision_tutor_agent = Agent(
+    name="VisionTutor",
     model="gpt-5.2",
-    instructions="""You are a helpful and adaptive AI Tutor Assistant.
-    You are interacting with a student via live video feed.
-    
-    You will receive:
-    1. The student's question.
-    2. The transcript of the video feed at that moment.
-    3. The detected emotion of the student (Curious, Angry, Confused, etc.).
-    4. The quality of their question.
-    
-    Your goal is to answer the question effectively while adapting to the student's emotional state.
-    - If they are 'Angry' or 'Frustrated', be calm, patient, and apologetic if things are unclear.
-    - If they are 'Confused', slow down and explain step-by-step.
-    - If they are 'Curious', be enthusiastic and go deeper.
-    
-    Also, if the question quality was 'Bad', gently encourage them to ask better questions next time after you answer (or ask for clarification if you truly can't answer).
-    
-    Keep your answers concise but helpful.
-    """,
+    instructions="""You are a helpful and adaptive AI Tutor Assistant that can use a real-time image from the student.
+
+You will receive:
+- The student's question
+- The transcript/context of the current lesson (may be short)
+- Recent chat history (may be empty)
+- A real-time image (e.g., a lab setup, a pendulum, a beaker, measurements, etc.)
+- The quality assessment of the student's question
+
+Goals:
+- Use the image to ground your explanation and identify relevant objects/components.
+- For chemistry: describe safe, conceptual steps and checks; avoid hazardous or step-by-step instructions for dangerous substances.
+- For physics: explain the observed setup, key variables, and what to measure/change.
+- Ask 1-2 clarifying questions if key details are missing (e.g., units, materials, constraints).
+- If question quality is 'Bad', gently suggest how to improve the question.
+- Keep the response concise, structured, and actionable for learning.
+""",
 )
 
 # Lesson Relevance / Guardrail Agent

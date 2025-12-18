@@ -2,7 +2,6 @@ import base64
 import json
 import logging
 import re
-from typing import Optional
 
 from agents import Runner
 from dotenv import load_dotenv
@@ -11,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from my_agents import emotion_agent, quality_agent, relevance_agent, tutor_agent
+from my_agents import quality_agent, relevance_agent, vision_tutor_agent
 
 load_dotenv()
 
@@ -32,13 +31,24 @@ logger = logging.getLogger(__name__)
 def _input_text_message(text: str):
     return [{"role": "user", "content": [{"type": "input_text", "text": text}]}]
 
+def _input_text_and_image_message(text: str, image_url: str):
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": text},
+                {"type": "input_image", "image_url": image_url, "detail": "auto"},
+            ],
+        }
+    ]
+
 
 _DATA_URL_RE = re.compile(r"^data:(?P<mime>[^;]+);base64,(?P<b64>.*)$", re.DOTALL)
 
 
 def _image_url_from_upload_or_base64(
     *,
-    image_base64: Optional[str],
+    image_base64: str | None,
 ) -> str:
     if image_base64:
         match = _DATA_URL_RE.match(image_base64.strip())
@@ -67,7 +77,6 @@ async def read_root():
 
 class AskResponse(BaseModel):
     response: str
-    emotion: dict
     quality: dict
     relevance: dict
 
@@ -77,8 +86,8 @@ async def ask(
     query: str = Form(...),
     transcript: str = Form(""),
     chat_history: str = Form("[]"),  # JSON string
-    image: Optional[UploadFile] = File(None),
-    image_base64: Optional[str] = Form(None),
+    image: UploadFile | None = File(None),
+    image_base64: str | None = Form(None),
 ):
     try:
         # 1. Process Image
@@ -93,26 +102,11 @@ async def ask(
         else:
             image_url = _image_url_from_upload_or_base64(image_base64=image_base64)
 
-        # 2. Emotion Classification
-        emotion_input = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": "Analyze the emotion in this image."},
-                    {"type": "input_image", "image_url": image_url, "detail": "auto"},
-                ],
-            }
-        ]
-
-        # Use async run
-        emotion_result = await Runner.run(emotion_agent, emotion_input)
-        emotion_data = json.loads(emotion_result.final_output)
-
-        # 3. Question Quality
+        # 2. Question Quality
         quality_result = await Runner.run(quality_agent, _input_text_message(query))
         quality_data = json.loads(quality_result.final_output)
 
-        # 4. Lesson Relevance Guardrail (skip if transcript is missing)
+        # 3. Lesson Relevance Guardrail (skip if transcript is missing)
         if transcript.strip():
             relevance_prompt = f"""
 Student Question:
@@ -151,16 +145,14 @@ Recent Chat History (JSON string):
                     f"Your question appears out of scope: {relevance_data.get('reason', 'Out of scope.')}"
                     f"{suggestion_text}"
                 ),
-                emotion=emotion_data,
                 quality=quality_data,
                 relevance=relevance_data,
             )
 
-        # 5. Tutor Response
+        # 4. Tutor Response (grounded by the real-time image)
         context = f"""
         Student Question: {query}
         Video Transcript: {transcript}
-        Detected Emotion: {emotion_data.get("emotion")} (Confidence: {emotion_data.get("confidence")})
         Question Quality: {quality_data.get("label")} (Score: {quality_data.get("score")})
         Feature: {quality_data.get("feedback")}
         Lesson Relevance: {relevance_data}
@@ -168,11 +160,12 @@ Recent Chat History (JSON string):
         Chat History: {chat_history}
         """
 
-        tutor_result = await Runner.run(tutor_agent, _input_text_message(context))
+        tutor_result = await Runner.run(
+            vision_tutor_agent, _input_text_and_image_message(context, image_url)
+        )
 
         return AskResponse(
             response=tutor_result.final_output,
-            emotion=emotion_data,
             quality=quality_data,
             relevance=relevance_data,
         )
@@ -181,7 +174,6 @@ Recent Chat History (JSON string):
         logger.error(f"Error processing request: {e}", exc_info=True)
         return AskResponse(
             response="Sorry, I encountered an error processing your request.",
-            emotion={"error": str(e)},
             quality={"error": str(e)},
             relevance={"error": str(e)},
         )
@@ -192,8 +184,8 @@ async def ask_with_stream(
     query: str = Form(...),
     transcript: str = Form(""),
     chat_history: str = Form("[]"),
-    image: Optional[UploadFile] = File(None),
-    image_base64: Optional[str] = Form(None),
+    image: UploadFile | None = File(None),
+    image_base64: str | None = Form(None),
 ):
     try:
         if image is not None:
@@ -205,18 +197,6 @@ async def ask_with_stream(
             image_url = f"data:{content_type};base64,{base64_image}"
         else:
             image_url = _image_url_from_upload_or_base64(image_base64=image_base64)
-
-        emotion_input = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": "Analyze the emotion in this image."},
-                    {"type": "input_image", "image_url": image_url, "detail": "auto"},
-                ],
-            }
-        ]
-        emotion_result = await Runner.run(emotion_agent, emotion_input)
-        emotion_data = json.loads(emotion_result.final_output)
 
         quality_result = await Runner.run(quality_agent, _input_text_message(query))
         quality_data = json.loads(quality_result.final_output)
@@ -250,7 +230,6 @@ Recent Chat History (JSON string):
         context = f"""
         Student Question: {query}
         Video Transcript: {transcript}
-        Detected Emotion: {emotion_data.get("emotion")} (Confidence: {emotion_data.get("confidence")})
         Question Quality: {quality_data.get("label")} (Score: {quality_data.get("score")})
         Feature: {quality_data.get("feedback")}
         Lesson Relevance: {relevance_data}
@@ -267,9 +246,7 @@ Recent Chat History (JSON string):
 
     async def event_generator():
         yield (
-            json.dumps(
-                {"type": "metadata", "emotion": emotion_data, "quality": quality_data, "relevance": relevance_data}
-            )
+            json.dumps({"type": "metadata", "quality": quality_data, "relevance": relevance_data})
             + "\n"
         )
 
@@ -296,7 +273,9 @@ Recent Chat History (JSON string):
             return
 
         try:
-            stream_result = Runner.run_streamed(tutor_agent, _input_text_message(context))
+            stream_result = Runner.run_streamed(
+                vision_tutor_agent, _input_text_and_image_message(context, image_url)
+            )
             async for event in stream_result.stream_events():
                 if getattr(event, "type", None) != "raw_response_event":
                     continue
