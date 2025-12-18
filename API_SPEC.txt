@@ -54,9 +54,10 @@ Form Fields
   - Backward compatible file upload (e.g., capture.jpg).
 
 Image Requirement
-- You must provide exactly one of:
-  - image_base64
+- You may provide either:
+  - image_base64, or
   - image
+- If neither is provided, the tutor still answers, but may ask for an image if it’s needed to resolve the question.
 
 Response
 - 200 application/json

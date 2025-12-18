@@ -31,7 +31,10 @@ logger = logging.getLogger(__name__)
 def _input_text_message(text: str):
     return [{"role": "user", "content": [{"type": "input_text", "text": text}]}]
 
-def _input_text_and_image_message(text: str, image_url: str):
+def _vision_input_message(text: str, image_url: str | None):
+    if not image_url:
+        return _input_text_message(text)
+
     return [
         {
             "role": "user",
@@ -49,7 +52,7 @@ _DATA_URL_RE = re.compile(r"^data:(?P<mime>[^;]+);base64,(?P<b64>.*)$", re.DOTAL
 def _image_url_from_upload_or_base64(
     *,
     image_base64: str | None,
-) -> str:
+) -> str | None:
     if image_base64:
         match = _DATA_URL_RE.match(image_base64.strip())
         if match:
@@ -66,7 +69,7 @@ def _image_url_from_upload_or_base64(
 
         return f"data:{mime};base64,{b64}"
 
-    raise ValueError("Missing image: provide 'image_base64' or an 'image' upload")
+    return None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -160,9 +163,7 @@ Recent Chat History (JSON string):
         Chat History: {chat_history}
         """
 
-        tutor_result = await Runner.run(
-            vision_tutor_agent, _input_text_and_image_message(context, image_url)
-        )
+        tutor_result = await Runner.run(vision_tutor_agent, _vision_input_message(context, image_url))
 
         return AskResponse(
             response=tutor_result.final_output,
@@ -238,9 +239,10 @@ Recent Chat History (JSON string):
         """
     except Exception as e:
         logger.error("Error processing request: %s", e, exc_info=True)
+        error_message = str(e) or "Unknown error"
 
-        async def error_event_generator():
-            yield json.dumps({"type": "error", "content": str(e)}) + "\n"
+        async def error_event_generator(msg: str = error_message):
+            yield json.dumps({"type": "error", "content": msg}) + "\n"
 
         return StreamingResponse(error_event_generator(), media_type="application/x-ndjson")
 
@@ -274,7 +276,7 @@ Recent Chat History (JSON string):
 
         try:
             stream_result = Runner.run_streamed(
-                vision_tutor_agent, _input_text_and_image_message(context, image_url)
+                vision_tutor_agent, _vision_input_message(context, image_url)
             )
             async for event in stream_result.stream_events():
                 if getattr(event, "type", None) != "raw_response_event":
