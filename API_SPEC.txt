@@ -64,6 +64,8 @@ Response
   - response (string): tutor reply text
   - quality (object): question quality output (shape depends on agent; typically includes "label", "score", "feedback")
   - relevance (object): lesson relevance output (see below)
+  - generated_image (string | null): optional data URL (e.g. "data:image/png;base64,...") when an explanatory image is generated
+  - generated_image_caption (string | null): optional caption for the generated image
 
 Lesson Relevance Guardrail
 - If `transcript` is non-empty, backend runs a relevance check:
@@ -149,6 +151,8 @@ Response
     - {"type":"metadata","quality":{...},"relevance":{...}}
   - token (0..N times)
     - {"type":"token","content":"partial text"}
+  - image (0..1 times, optional)
+    - {"type":"image","data_url":"data:image/png;base64,...","caption":"..."}
   - done (sent once at end)
     - {"type":"done"}
   - error (may be sent instead of/after other events)

@@ -1,4 +1,4 @@
-from agents import Agent
+from agents import Agent, ImageGenerationTool
 
 # Follow-up Rephrase Agent
 followup_rephrase_agent = Agent(
@@ -21,6 +21,43 @@ Output JSON ONLY:
 - "did_rewrite": boolean
 - "confidence": number from 0.0 to 1.0
 """,
+)
+
+# Image Decision Agent
+image_decider_agent = Agent(
+    name="ImageDecider",
+    model="gpt-5.2",
+    instructions="""You decide whether generating an explanatory image would help a student understand the tutor response.
+
+You will receive:
+- Interpreted student question
+- Lesson transcript/context (may be empty)
+- Tutor response text
+
+Guidelines:
+- Only request an image when it materially improves understanding (e.g., diagram, setup schematic, step-by-step concept visualization).
+- Prefer simple diagrams for physics setups (pendulum, forces) and chemistry concepts (glassware layout, particle-level illustration).
+- Do NOT generate images for disallowed content or anything unsafe.
+
+Output JSON ONLY:
+- "should_generate": boolean
+- "confidence": number from 0.0 to 1.0
+- "prompt": string (a clear image-generation prompt; empty if should_generate=false)
+- "caption": string (short caption for the image; empty if should_generate=false)
+""",
+)
+
+
+# Image Generator Agent (uses ImageGenerationTool)
+image_generator_agent = Agent(
+    name="ImageGenerator",
+    model="gpt-5.1",
+    instructions="You are a helpful agent.",
+    tools=[
+        ImageGenerationTool(
+            tool_config={"type": "image_generation", "quality": "low"},
+        )
+    ],
 )
 
 # Question Quality Gamification Agent
@@ -63,7 +100,7 @@ Goals:
 - Ask 1-2 clarifying questions if key details are missing (e.g., units, materials, constraints).
 - If question quality is 'Bad', gently suggest how to improve the question.
 - Keep the response concise, structured, and actionable for learning.
-- If user asking about mathemetic, please use proper 'Katex' as format for beautiful render in the UI.
+- If user asking about mathemetic, please use proper 'Katex' as format for beautiful render in the UI. And you need to put '$' sign at the start and at the end.
 """,
 )
 

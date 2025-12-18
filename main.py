@@ -2,6 +2,8 @@ import base64
 import json
 import logging
 import re
+from collections.abc import Mapping
+from typing import Any
 
 from agents import Runner
 from dotenv import load_dotenv
@@ -10,7 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from my_agents import followup_rephrase_agent, quality_agent, relevance_agent, vision_tutor_agent
+from my_agents import (
+    followup_rephrase_agent,
+    image_decider_agent,
+    image_generator_agent,
+    quality_agent,
+    relevance_agent,
+    vision_tutor_agent,
+)
 
 load_dotenv()
 
@@ -69,6 +78,27 @@ def _image_url_from_upload_or_base64(
 
         return f"data:{mime};base64,{b64}"
 
+    return None
+
+
+def _get_field(obj: Any, key: str) -> Any:
+    if isinstance(obj, Mapping):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def _extract_image_data_url_from_run_result(run_result: Any) -> str | None:
+    new_items = getattr(run_result, "new_items", None) or []
+    for item in new_items:
+        if getattr(item, "type", None) != "tool_call_item":
+            continue
+        raw_call = getattr(item, "raw_item", None)
+        call_type = _get_field(raw_call, "type")
+        if call_type != "image_generation_call":
+            continue
+        img_result = _get_field(raw_call, "result")
+        if isinstance(img_result, str) and img_result:
+            return f"data:image/png;base64,{img_result}"
     return None
 
 
@@ -140,6 +170,8 @@ class AskResponse(BaseModel):
     response: str
     quality: dict
     relevance: dict
+    generated_image: str | None = None
+    generated_image_caption: str | None = None
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -228,10 +260,39 @@ Recent Chat History (JSON string):
 
         tutor_result = await Runner.run(vision_tutor_agent, _vision_input_message(context, image_url))
 
+        generated_image = None
+        generated_image_caption = None
+        try:
+            decision_prompt = f"""
+Interpreted student question:
+{effective_query}
+
+Lesson transcript/context:
+{transcript}
+
+Tutor response:
+{tutor_result.final_output}
+""".strip()
+            decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
+            decision = json.loads(decision_result.final_output)
+            should_generate = bool(decision.get("should_generate", False))
+            confidence = float(decision.get("confidence", 0.0) or 0.0)
+            prompt = (decision.get("prompt") or "").strip()
+            caption = (decision.get("caption") or "").strip()
+
+            if should_generate and confidence >= 0.6 and prompt:
+                image_result = await Runner.run(image_generator_agent, prompt)
+                generated_image = _extract_image_data_url_from_run_result(image_result)
+                generated_image_caption = caption or None
+        except Exception:
+            pass
+
         return AskResponse(
             response=tutor_result.final_output,
             quality=quality_data,
             relevance=relevance_data,
+            generated_image=generated_image,
+            generated_image_caption=generated_image_caption,
         )
 
     except Exception as e:
@@ -240,6 +301,8 @@ Recent Chat History (JSON string):
             response="Sorry, I encountered an error processing your request.",
             quality={"error": str(e)},
             relevance={"error": str(e)},
+            generated_image=None,
+            generated_image_caption=None,
         )
 
 
@@ -343,6 +406,7 @@ Recent Chat History (JSON string):
             return
 
         try:
+            full_text = ""
             stream_result = Runner.run_streamed(
                 vision_tutor_agent, _vision_input_message(context, image_url)
             )
@@ -354,7 +418,47 @@ Recent Chat History (JSON string):
                 if getattr(data, "type", None) == "response.output_text.delta":
                     delta = getattr(data, "delta", "")
                     if delta:
+                        full_text += delta
                         yield json.dumps({"type": "token", "content": delta}) + "\n"
+
+            generated_image = None
+            generated_image_caption = None
+            try:
+                decision_prompt = f"""
+Interpreted student question:
+{effective_query}
+
+Lesson transcript/context:
+{transcript}
+
+Tutor response:
+{full_text}
+""".strip()
+                decision_result = await Runner.run(image_decider_agent, _input_text_message(decision_prompt))
+                decision = json.loads(decision_result.final_output)
+                should_generate = bool(decision.get("should_generate", False))
+                confidence = float(decision.get("confidence", 0.0) or 0.0)
+                prompt = (decision.get("prompt") or "").strip()
+                caption = (decision.get("caption") or "").strip()
+
+                if should_generate and confidence >= 0.6 and prompt:
+                    image_result = await Runner.run(image_generator_agent, prompt)
+                    generated_image = _extract_image_data_url_from_run_result(image_result)
+                    generated_image_caption = caption or None
+            except Exception:
+                pass
+
+            if generated_image:
+                yield (
+                    json.dumps(
+                        {
+                            "type": "image",
+                            "data_url": generated_image,
+                            "caption": generated_image_caption,
+                        }
+                    )
+                    + "\n"
+                )
 
             yield json.dumps({"type": "done"}) + "\n"
         except Exception as e:

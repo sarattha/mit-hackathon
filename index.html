@@ -66,6 +66,12 @@
             
             <h4>Tutor Response</h4>
             <div id="resTutor" style="white-space: pre-wrap; background: #eef; padding: 10px;">...</div>
+
+            <h4>Generated Image (Optional)</h4>
+            <div id="resImageWrap" class="hidden">
+                <div id="resImageCaption" style="margin: 6px 0; color: #333;"></div>
+                <img id="resImage" alt="Generated explanation" style="max-width: 100%; border: 1px solid #ccc;" />
+            </div>
         </div>
     </div>
 
@@ -103,6 +109,9 @@
             document.getElementById('resEmotion').textContent = '...';
             document.getElementById('resQuality').textContent = '...';
             document.getElementById('resTutor').textContent = '...';
+            document.getElementById('resImageWrap').classList.add('hidden');
+            document.getElementById('resImage').src = '';
+            document.getElementById('resImageCaption').textContent = '';
 
             try {
                 const endpoint = stream ? 'http://localhost:8000/ask_with_stream' : 'http://localhost:8000/ask';
@@ -131,6 +140,12 @@
                                    document.getElementById('resQuality').textContent = JSON.stringify(data.quality, null, 2);
                                } else if (data.type === 'token') {
                                    document.getElementById('resTutor').textContent += data.content;
+                               } else if (data.type === 'image') {
+                                   if (data.data_url) {
+                                       document.getElementById('resImage').src = data.data_url;
+                                       document.getElementById('resImageCaption').textContent = data.caption || '';
+                                       document.getElementById('resImageWrap').classList.remove('hidden');
+                                   }
                                } else if (data.type === 'done') {
                                    // no-op
                                }
@@ -145,6 +160,11 @@
                     document.getElementById('resEmotion').textContent = JSON.stringify(data.relevance, null, 2);
                     document.getElementById('resQuality').textContent = JSON.stringify(data.quality, null, 2);
                     document.getElementById('resTutor').textContent = data.response;
+                    if (data.generated_image) {
+                        document.getElementById('resImage').src = data.generated_image;
+                        document.getElementById('resImageCaption').textContent = data.generated_image_caption || '';
+                        document.getElementById('resImageWrap').classList.remove('hidden');
+                    }
                 }
 
             } catch (e) {
