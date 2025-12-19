@@ -162,6 +162,7 @@ Goals:
 - If question quality is 'Bad', gently suggest how to improve the question.
 - Keep the response concise, structured, and actionable for learning.
 - If user asking about mathemetic, please use proper 'Katex' as format for beautiful render in the UI. And you need to put '$' sign at the start and at the end.
+- If the student shows interest or asks about a topic in depth, encourage a social learning moment by suggesting they ask a classmate too. Use one random name from this list: Ava, Mia, Chloe, Sofia.
 """,
 )
 

@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7f2e9"/>
+      <stop offset="100%" stop-color="#eef3f7"/>
+    </linearGradient>
+    <linearGradient id="primary" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f9fbff"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff5e6"/>
+      <stop offset="100%" stop-color="#ffe9d1"/>
+    </linearGradient>
+    <linearGradient id="optional" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f3f6ff"/>
+      <stop offset="100%" stop-color="#e6edff"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#2b2b2b"/>
+    </marker>
+    <marker id="arrow-muted" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#64748b"/>
+    </marker>
+    <style>
+      .title { font: 700 28px "IBM Plex Sans", "Helvetica", "Arial", sans-serif; fill: #1f2937; }
+      .subtitle { font: 500 16px "IBM Plex Sans", "Helvetica", "Arial", sans-serif; fill: #475569; }
+      .node-title { font: 700 16px "IBM Plex Sans", "Helvetica", "Arial", sans-serif; fill: #0f172a; }
+      .node-text { font: 500 13px "IBM Plex Sans", "Helvetica", "Arial", sans-serif; fill: #334155; }
+      .note { font: 500 12px "IBM Plex Sans", "Helvetica", "Arial", sans-serif; fill: #64748b; }
+      .node { fill: url(#primary); stroke: #1f2937; stroke-width: 1.2; rx: 12; }
+      .node-accent { fill: url(#accent); stroke: #b45309; stroke-width: 1.2; rx: 12; }
+      .node-optional { fill: url(#optional); stroke: #3b82f6; stroke-width: 1.2; rx: 12; }
+      .arrow { stroke: #2b2b2b; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .arrow-muted { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow-muted); stroke-dasharray: 6 6; }
+      .panel { fill: #ffffff; stroke: #cbd5f5; stroke-width: 1; rx: 14; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg)"/>
+
+  <text x="60" y="60" class="title">Tutoring Agent Pipeline</text>
+  <text x="60" y="86" class="subtitle">Follow-up rewrite, quality scoring, lesson guardrail, vision tutor, and optional image generation</text>
+
+  <rect x="50" y="120" width="1300" height="640" class="panel"/>
+
+  <!-- Inputs -->
+  <rect x="90" y="180" width="220" height="120" class="node-accent"/>
+  <text x="110" y="210" class="node-title">Student Inputs</text>
+  <text x="110" y="236" class="node-text">Query</text>
+  <text x="110" y="256" class="node-text">Transcript</text>
+  <text x="110" y="276" class="node-text">Chat history</text>
+
+  <rect x="90" y="330" width="220" height="90" class="node-accent"/>
+  <text x="110" y="360" class="node-title">Image Input</text>
+  <text x="110" y="386" class="node-text">Upload or base64</text>
+
+  <!-- Follow-up rewrite -->
+  <rect x="360" y="170" width="230" height="130" class="node"/>
+  <text x="380" y="200" class="node-title">FollowupRephrase</text>
+  <text x="380" y="226" class="node-text">Normalize short replies</text>
+  <text x="380" y="246" class="node-text">Output: rewritten query</text>
+  <text x="380" y="266" class="note">Only when needed</text>
+
+  <!-- Quality -->
+  <rect x="640" y="170" width="230" height="130" class="node"/>
+  <text x="660" y="200" class="node-title">QualityJudge</text>
+  <text x="660" y="226" class="node-text">Score + label question</text>
+  <text x="660" y="246" class="node-text">Output: JSON rating</text>
+
+  <!-- Relevance -->
+  <rect x="920" y="170" width="230" height="130" class="node"/>
+  <text x="940" y="200" class="node-title">LessonRelevance</text>
+  <text x="940" y="226" class="node-text">In-scope guardrail</text>
+  <text x="940" y="246" class="node-text">Only if transcript exists</text>
+
+  <!-- Vision tutor -->
+  <rect x="1050" y="360" width="260" height="150" class="node"/>
+  <text x="1070" y="392" class="node-title">VisionTutor</text>
+  <text x="1070" y="418" class="node-text">Grounded tutor response</text>
+  <text x="1070" y="438" class="node-text">Uses image + policy</text>
+  <text x="1070" y="458" class="node-text">Guide or answer</text>
+
+  <!-- Image decision -->
+  <rect x="720" y="430" width="250" height="120" class="node-optional"/>
+  <text x="740" y="460" class="node-title">ImageDecider</text>
+  <text x="740" y="486" class="node-text">Should we generate?</text>
+  <text x="740" y="506" class="node-text">Prefer overlays on photo</text>
+
+  <!-- Image generation -->
+  <rect x="420" y="430" width="240" height="120" class="node-optional"/>
+  <text x="440" y="460" class="node-title">Image Generator</text>
+  <text x="440" y="486" class="node-text">gpt-image-1.5</text>
+  <text x="440" y="506" class="node-text">Returns base64 PNG</text>
+
+  <!-- Output -->
+  <rect x="1080" y="560" width="220" height="110" class="node-accent"/>
+  <text x="1100" y="592" class="node-title">Response</text>
+  <text x="1100" y="618" class="node-text">Tutor answer</text>
+  <text x="1100" y="638" class="node-text">Optional image</text>
+
+  <!-- Arrows -->
+  <path d="M310,240 L350,235" class="arrow"/>
+  <path d="M590,235 L630,235" class="arrow"/>
+  <path d="M870,235 L910,235" class="arrow"/>
+  <path d="M1035,300 L1100,350" class="arrow"/>
+
+  <path d="M200,300 L200,324" class="arrow-muted"/>
+  <path d="M310,375 L1040,410" class="arrow-muted"/>
+
+  <path d="M1180,510 L1180,550" class="arrow"/>
+
+  <path d="M1050,435 L980,490" class="arrow-muted"/>
+  <path d="M720,490 L670,490" class="arrow-muted"/>
+  <path d="M660,550 L1070,610" class="arrow-muted"/>
+
+  <!-- Legend -->
+  <rect x="90" y="710" width="500" height="70" class="panel"/>
+  <rect x="110" y="730" width="26" height="18" class="node"/>
+  <text x="146" y="744" class="note">Core agent step</text>
+  <rect x="280" y="730" width="26" height="18" class="node-optional"/>
+  <text x="316" y="744" class="note">Optional image path</text>
+  <rect x="460" y="730" width="26" height="18" class="node-accent"/>
+  <text x="496" y="744" class="note">Inputs/Outputs</text>
+</svg>
