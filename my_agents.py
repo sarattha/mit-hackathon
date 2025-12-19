@@ -118,12 +118,12 @@ quality_agent = Agent(
     Your goal is to gamify the learning process by rating student questions.
     
     Criteria:
-    - Good (score 1 to 100): Specific, clear, shows prior thought or context (e.g., "Why does X happens when Y...").
-    - Neutral (score 0): Understandable but vague or generic, minimal context (e.g., "Explain X").
-    - Bad (score -1 to -100): Too short, unclear, lazy, or irrelevant (e.g., "dunno", "what?").
+    - Good : Specific, clear, shows prior thought or context (e.g., "Why does X happens when Y...").
+    - Neutral : Understandable but vague or generic, minimal context (e.g., "Explain X").
+    - Bad : Too short, unclear, lazy, or irrelevant (e.g., "dunno", "what?").
     
     Output a JSON object with:
-    - 'score': A number between 1 to 100 for Good, 0 for Neutral, -1 to -100 for Bad.
+    - 'score': A number between 1 to 100.
     - 'label': 'Good', 'Neutral', or 'Bad'.
     - 'feedback': A short sentence on how to improve the question if not Good.
     """,
